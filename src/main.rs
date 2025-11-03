@@ -13,8 +13,14 @@ impl Calculator
 {
     fn new() -> Self
     {
-        let mut new_instance = Calculator  
-        {frequent_maclaurin_terms: (16), rare_maclaurin_terms: (32), newton_iterations: (16), ln2: (0.0), inverse_ln2: (0.0)};
+        let mut new_instance = Calculator
+        {
+            frequent_maclaurin_terms: 16,
+            rare_maclaurin_terms: 32,
+            newton_iterations: 16,
+            ln2: 0.0,
+            inverse_ln2: 0.0,
+        };
         new_instance.ln2 = new_instance.ln_approximation(2.0);
         new_instance.inverse_ln2 = 1.0 / new_instance.ln2;
         return new_instance;
@@ -53,14 +59,18 @@ impl Calculator
 
     fn binary_exponentiation(&self, exponent: i64) -> f64
     {
+        // 2 ^ n = 0[(n- 1023) as binary]000...000 in IEEE754
         if exponent > 1023
-        {   return f64::INFINITY; }
+        {
+            return f64::INFINITY;
+        }
         else if exponent < -1022
-        {   return 0.0; }
+        {
+            return 0.0;
+        }
         let exponent_bits: u64 = ((1023 + exponent) as u64) << 52;
         return f64::from_bits(exponent_bits);
-        // sign is 0, and the significand is 1.0000...00
-        // literally the entire new number is just a bitshift of the exponent to its place
+        // literally the entire new number is just a bitshift of the exponent + 1023 to its place
     }
 
     fn exp(&self, x: f64) -> f64
@@ -91,8 +101,8 @@ impl Calculator
             return f64::NEG_INFINITY;
         }
         // TODO: 
-        //  BETTER FIRST GUESS
-        //  RANGE REDUCTION
+        //  IMPROVE ON FIRST GUESS FOR BETTER EFFICIENCY
+        //  ADD RANGE REDUCTION FOR EXTREMELY IMPROVED ACCURACY AT FURTHER RANGES
         let mut guess: f64 = if x > 1.0 { (x*x - 1.0)/(2.0 * x) } else { -2.0 } ;
         for _ in 1..self.newton_iterations
         {
@@ -106,15 +116,20 @@ fn main()
 {
     let mut input: String = String::new();
     let calc: Calculator = Calculator::new();
-    let mut x: f64;
-    let t: u8 = 5;
-    for i in 1..t
+    let t: u8 = 10;
+    for i in 1..t+1
     {
         print!("Enter a number ({:02}/{:02}): ", i, t);
         io::stdout().flush().expect("Failed to flush STDOUT");
         io::stdin().read_line(&mut input).expect("Failed to read from STDIN");
-        x = input.trim().parse().expect("Input wasn't a number");
+        let user_number: Result<f64, std::num::ParseFloatError> = input.trim().parse::<f64>();
         input.clear();
+        if user_number.is_err()
+        {
+            println!("Invalid input: You should enter a number.");
+            continue;
+        }
+        let x: f64 = user_number.unwrap();
         println!("exp({:.2}) = {}", x, (x).exp());
         println!("exp({:.2}) ~ {}", x, calc.exp(x));
         println!("ln({:.2}) = {}", x, (x).ln());
