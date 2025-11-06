@@ -31,8 +31,7 @@ impl Calculator
         let mut result: f64 = 1.0;
         for n in (1..terms).rev()
         {
-            result *= x/(n as f64);
-            result += 1.0;
+            result = 1.0 + ((result * x) / (n as f64));
         }
         return result;   
     }
@@ -57,58 +56,100 @@ impl Calculator
         return guess;
     }
 
-    fn binary_exponentiation(&self, exponent: i64) -> f64
+    fn f64_extraction(&self, x: f64) -> (u8, f64, i16)
     {
-        // 2 ^ n = 0[(n- 1023) as binary]000...000 in IEEE754
-        if exponent > 1023
+        let bits: u64 = x.to_bits();
+        let sign: u8 = (bits >> 63) as u8;
+        let unadjusted_exponent: u64 = (bits >> 52) & 0x7FF;
+        let significand_bits: u64 = bits & 0x000F_FFFF_FFFF_FFFF;
+        if unadjusted_exponent == 0
+        {
+            // ZERO
+            if significand_bits == 0
+            {
+                return (sign, 0.0, -1022);
+            }
+            // DENORMAL
+            return (sign, (significand_bits as f64) * f64::from_bits(0x3CB0_0000_0000_0000), -1022);
+        }
+        else
+        {
+            let significand: f64 = f64::from_bits(significand_bits | 0x3FF0_0000_0000_0000);
+            if unadjusted_exponent == 0x7FF
+            {
+                // INFINITY
+                if significand_bits == 0
+                {
+                    return (sign, 0.0, 2047);
+                }
+                // NaN
+                return (sign, significand, 2047);
+            }
+            // NORMAL
+            return (sign, significand, unadjusted_exponent as i16 - 1023); 
+        }
+    }
+
+    fn power_2(&self, power: i64) -> f64
+    {
+        // Larger than the largest IEEE754 normal number possible
+        if power > 1023
         {
             return f64::INFINITY;
         }
-        else if exponent < -1022
+        // Smaller the smallest IEEE754 denormal number possible
+        else if power < -1074
         {
             return 0.0;
         }
-        let exponent_bits: u64 = ((1023 + exponent) as u64) << 52;
-        return f64::from_bits(exponent_bits);
-        // literally the entire new number is just a bitshift of the exponent + 1023 to its place
+        // Within normal number range
+        else if power >= -1022
+        {
+            return f64::from_bits(((1023 + power) as u64) << 52);
+        }
+        // Within denormal number range
+        return f64::from_bits(1u64 << ((power + 1074) as u64));
     }
 
     fn exp(&self, x: f64) -> f64
     {
+        // e^-exp = 1 / e^exp
         if x < 0.0
         {
             return 1.0 / self.exp(-x);
         }
+        // e^x = 2^whole * e^(x - whole ln2)
         let whole: i64 = (x * self.inverse_ln2 + 0.5) as i64;
         let decimals: f64 = x - (whole as f64) * self.ln2;
         let mult: f64 = self.maclaurin_exp(decimals, self.frequent_maclaurin_terms);
-        return self.binary_exponentiation(whole) * mult;
+        return self.power_2(whole) * mult;
     }
 
     fn newton_new_a_lnx_a(&self, a: f64, x: f64) -> f64
     {
+        // for finding a better x such that f(x) gets closer to 0 :
+        // N(x) = x - f(x)/f'(x)
         return a - 1.0 + (x / self.exp(a));
     }
 
     fn ln(&self, x: f64) -> f64
     {
-        if x < 0.0 || (x == 0.0 && x.is_sign_negative())
+        let (sign, significand, exponent): (u8, f64, i16) = self.f64_extraction(x);
+        if sign == 1
         {
+            if significand == 0.0
+            {
+                return f64::NEG_INFINITY;
+            }
             return f64::NAN;
         }
-        else if x == 0.0 && x.is_sign_positive()
-        {
-            return f64::NEG_INFINITY;
-        }
-        // TODO: 
-        //  IMPROVE ON FIRST GUESS FOR BETTER EFFICIENCY
-        //  ADD RANGE REDUCTION FOR EXTREMELY IMPROVED ACCURACY AT FURTHER RANGES
-        let mut guess: f64 = if x > 1.0 { (x*x - 1.0)/(2.0 * x) } else { -2.0 } ;
+        // ln x = ln significand + exp ln 2
+        let mut guess: f64 = significand - 1.0;
         for _ in 1..self.newton_iterations
         {
-            guess = self.newton_new_a_lnx_a(guess, x);
+            guess = self.newton_new_a_lnx_a(guess, significand);
         }
-        return guess;
+        return guess + self.ln2 * (exponent as f64);
     }
 }
 
