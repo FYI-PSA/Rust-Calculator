@@ -1,6 +1,13 @@
 [package]
 name = "rust-calculator"
+description = "High-precision calculator for complicated functions using optimized methods"
 version = "0.1.0"
 edition = "2024"
+
+[profile.dev]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
 
 [dependencies]

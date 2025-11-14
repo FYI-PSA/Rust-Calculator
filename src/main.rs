@@ -1,9 +1,8 @@
-use std::io::{self, Write};
+use std::{f64, io::{self, Write}};
 
 struct Calculator
 {
-    frequent_maclaurin_terms: u8,
-    rare_maclaurin_terms: u8,
+    maclaurin_terms: u8,
     newton_iterations: u8,
     ln2: f64,
     inverse_ln2: f64,
@@ -13,21 +12,21 @@ impl Calculator
 {
     fn new() -> Self
     {
-        let mut new_instance = Calculator
+        let new_instance = Calculator
         {
-            frequent_maclaurin_terms: 16,
-            rare_maclaurin_terms: 32,
-            newton_iterations: 16,
-            ln2: 0.0,
-            inverse_ln2: 0.0,
+            maclaurin_terms: 24,
+            newton_iterations: 24,
+            ln2: f64::consts::LN_2,
+            inverse_ln2: f64::consts::LOG2_E,
         };
-        new_instance.ln2 = new_instance.ln_approximation(2.0);
-        new_instance.inverse_ln2 = 1.0 / new_instance.ln2;
         return new_instance;
     }
 
-    fn maclaurin_exp(&self, x: f64, terms: u8) -> f64
+    /*
+    fn maclaurin_exp_backwards(&self, x: f64, terms: u8) -> f64
     {
+        // slightly faster
+        // less accurate
         let mut result: f64 = 1.0;
         for n in (1..terms).rev()
         {
@@ -35,25 +34,32 @@ impl Calculator
         }
         return result;   
     }
+    */
 
-    fn approximate_newton_lny_x(&self, x: f64, y: f64) -> f64
+    fn maclaurin_exp_forwards(&self, x: f64, terms: u8) -> f64
     {
-        return x - (self.exp_approximation(x) - y)/self.exp_approximation(x);
-    }
-
-    fn exp_approximation(&self, x: f64) -> f64
-    {
-        return self.maclaurin_exp(x, self.rare_maclaurin_terms);
-    }
-
-    fn ln_approximation(&self, x: f64) -> f64
-    {
-        let mut guess: f64 = x/2.0;
-        for _ in 0..self.newton_iterations
+        // slightly slower
+        // more accurate
+        let mut result = 1.0;
+        let mut term = 1.0;
+        for n in 1..terms
         {
-            guess = self.approximate_newton_lny_x(guess, x);
+            term *= x / (n as f64);
+            result += term;
         }
-        return guess;
+        return result;
+    }
+
+    fn maclaurin_exp(&self, x: f64, terms: u8) -> f64
+    {
+        return self.maclaurin_exp_forwards(x, terms);
+    }
+
+    fn newton_new_a_lnx_a(&self, a: f64, x: f64, exp_function: impl Fn(f64) -> f64) -> f64
+    {
+        // for finding a better x such that f(x) gets closer to 0 :
+        // N(x) = x - f(x)/f'(x)
+        return a - 1.0 + (x / exp_function(a));
     }
 
     fn f64_extraction(&self, x: f64) -> (u8, f64, i16)
@@ -119,17 +125,11 @@ impl Calculator
             return 1.0 / self.exp(-x);
         }
         // e^x = 2^whole * e^(x - whole ln2)
-        let whole: i64 = (x * self.inverse_ln2 + 0.5) as i64;
+        // let whole: i64 = (x * self.inverse_ln2 + 0.5) as i64;
+        let whole: i64 = (x * self.inverse_ln2).round() as i64;
         let decimals: f64 = x - (whole as f64) * self.ln2;
-        let mult: f64 = self.maclaurin_exp(decimals, self.frequent_maclaurin_terms);
+        let mult: f64 = self.maclaurin_exp(decimals, self.maclaurin_terms);
         return self.power_2(whole) * mult;
-    }
-
-    fn newton_new_a_lnx_a(&self, a: f64, x: f64) -> f64
-    {
-        // for finding a better x such that f(x) gets closer to 0 :
-        // N(x) = x - f(x)/f'(x)
-        return a - 1.0 + (x / self.exp(a));
     }
 
     fn ln(&self, x: f64) -> f64
@@ -139,41 +139,118 @@ impl Calculator
         {
             if significand == 0.0
             {
+                // The standard is to return -inf even when -0 should technically mathematically be NaN
                 return f64::NEG_INFINITY;
             }
             return f64::NAN;
+        }
+        if x == 0.0
+        {
+            return f64::NEG_INFINITY;
         }
         // ln x = ln significand + exp ln 2
         let mut guess: f64 = significand - 1.0;
         for _ in 1..self.newton_iterations
         {
-            guess = self.newton_new_a_lnx_a(guess, significand);
+            guess = self.newton_new_a_lnx_a(guess, significand, |value| self.exp(value));
         }
         return guess + self.ln2 * (exponent as f64);
+    }
+
+    fn format_output(&self, x: f64) -> String
+    {
+        if x.abs() == 0.0
+        {
+            return "0".to_string();
+        }
+        else if x.abs() > 1e3
+        {
+            return format!("{:.5e}", x);
+        }
+        else if x.abs() < 1e-3
+        {
+            return format!("{:.5e}", x);
+        }
+        else if x.is_infinite()
+        {
+            if x.is_sign_positive()
+            {
+                return "inf".to_string();
+            }
+            return "-inf".to_string();
+        }
+        else if x.is_nan()
+        {
+            return "NaN".to_string();
+        }
+        else
+        {
+            return format!("{:.7}", x);
+        }
     }
 }
 
 fn main()
 {
+    println!("[!] Project URL: https://GitHub.com/FYI-PSA/Rust-Calculator/");
     let mut input: String = String::new();
     let calc: Calculator = Calculator::new();
-    let t: u8 = 10;
+    // let t: i64 = 10_000_000;
+    // for i in (-t-1)..(t+1)
+    let t: i16 = 50;
+    println!("[!] Enter nothing to quit.");
     for i in 1..t+1
     {
-        print!("Enter a number ({:02}/{:02}): ", i, t);
-        io::stdout().flush().expect("Failed to flush STDOUT");
-        io::stdin().read_line(&mut input).expect("Failed to read from STDIN");
-        let user_number: Result<f64, std::num::ParseFloatError> = input.trim().parse::<f64>();
-        input.clear();
-        if user_number.is_err()
+        print!("[?] Enter a number ({:02}/{:02}): ", i, t);
+        io::stdout().flush().expect("[#] Failed to flush STDOUT");
+        io::stdin().read_line(&mut input).expect("[#] Failed to read from STDIN");
+        input = String::from(input.trim());
+        let user_number: Result<f64, std::num::ParseFloatError> = input.parse::<f64>();
+        let x: f64 = if user_number.is_err()
         {
-            println!("Invalid input: You should enter a number.");
-            continue;
+            if input.is_empty()
+            {
+                println!("\n[!] Goodbye!\n");
+                break;
+            }
+            else
+            {
+                println!("[#] Invalid input: You should enter a number.");
+                continue;
+            }
         }
-        let x: f64 = user_number.unwrap();
-        println!("exp({:.2}) = {}", x, (x).exp());
-        println!("exp({:.2}) ~ {}", x, calc.exp(x));
-        println!("ln({:.2}) = {}", x, (x).ln());
-        println!("ln({:.2}) ~ {}", x, calc.ln(x));
+        else
+        {
+            user_number.unwrap()
+            // i as f64
+        };
+        input.clear();
+        let exp_x: f64 = calc.exp(x);
+        let ln_x: f64 = calc.ln(x);
+        println!("exp({}) = {}", calc.format_output(x), calc.format_output(exp_x));
+
+        if exp_x.is_finite()
+        {
+            let delta_exp: f64 = x.exp() - exp_x;
+            let relative_delta: f64 = delta_exp / x.exp();
+            if relative_delta.abs() > 1e-7
+            {
+                println!("[!] WARNING: Calculator.exp too inaccurate when x = {}", calc.format_output(x));
+            }
+        }
+        
+        println!("ln({}) = {}", calc.format_output(x), calc.format_output(ln_x));
+        
+        if x.is_sign_positive()
+        {
+            let delta_ln: f64 = x.ln() - ln_x;
+            let relative_delta: f64 = delta_ln / x.ln();
+            if relative_delta.abs() > 1e-7
+            {
+                println!("[!] WARNING: Calculator.ln too inaccurate when x = {}", calc.format_output(x));
+            }
+        }
+
+        println!("");
     }
 }
